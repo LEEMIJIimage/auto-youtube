@@ -1,0 +1,7 @@
+openai
+moviepy==1.0.3
+pillow
+feedparser
+python-dotenv
+requests
+google-api-python-client
