@@ -15,8 +15,19 @@ AI_MAX_TOKENS = 1200
 # ======================
 # Pipeline Policy
 # ======================
-DEFAULT_NEWS_QUERY = "사건 사고 범죄 미스터리"
+DEFAULT_NEWS_QUERY = "사건"
 DEFAULT_NEWS_LIMIT = 1
+
+# 콘텐츠(스크립트 재료) 소스 provider 우선순위 (fallback)
+# 확장 예: ["reddit", "rss_google", "rss_bbc", "rss_naver"]
+CONTENT_PROVIDER_PRIORITY = ["rss_google"]
+
+# ======================
+# Humor Pipeline Policy
+# ======================
+# Reddit 검색어(영문 권장) - 예: "funny", "joke", "tifu"
+HUMOR_QUERY = "funny"
+HUMOR_REDDIT_SUBREDDITS = ["funny", "tifu", "Jokes"]
 
 # ======================
 # Image Search Policy
@@ -44,7 +55,7 @@ LONG_VIDEO_PATH = OUTPUT_DIR / LONG_VIDEO_FILENAME
 SHORT_VIDEO_PATH = OUTPUT_DIR / SHORT_VIDEO_FILENAME
 
 # ======================
-# Video Policy (여기만!)
+# Video Policy
 # ======================
 LONG_VIDEO_RESOLUTION = (1920, 1080)   # 롱폼 기본 16:9
 SHORT_VIDEO_RESOLUTION = (1080, 1920)  # 숏츠 9:16
@@ -54,7 +65,7 @@ LONG_IMAGE_DURATION_SEC = 3      # 슬라이드 한 장당 3초
 SHORT_DURATION_SEC = 10          # 숏츠 기본 길이
 
 # 롱폼 목표 길이(초). 5분 = 300초
-LONG_DURATION_SEC = 300
+LONG_DURATION_SEC = 100
 
 BGM_PATH = BASE_DIR / "assets" / "bgm" / "Nebula - The Grey Room _ Density & Time.mp3"
 FONT_PATH = BASE_DIR / "assets" / "font" / "NanumGothic.ttf"

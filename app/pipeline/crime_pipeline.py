@@ -7,15 +7,28 @@ from app.pipeline.base_pipeline import BasePipeline
 from app.video.video_creator import create_long_video
 from app.short.short_creator import create_short_video
 from app.utils.artifacts import save_text, save_json
+from app.content.aggregator import ContentAggregator
+from app.images.aggregator import ImageAggregator
 from config import settings
 import logging
 
 class CrimePipeline(BasePipeline):
+    @classmethod
+    def build(cls, ai_provider, run_ctx):
+        """
+        main.py가 파이프라인별 provider 조합을 몰라도 되게,
+        파이프라인 내부에서 필요한 구성요소를 조립한다.
+        """
+        content = ContentAggregator()
+        images = ImageAggregator(run_ctx=run_ctx)
+        return cls(ai_provider=ai_provider, content_provider=content, image_provider=images, run_ctx=run_ctx)
+
     def run(self):
         logger = logging.getLogger("auto_youtube.pipeline.crime")
         print("🔍 뉴스 검색 중…")
-        news = self.search.search()
-        logger.info("news=%s", {k: news.get(k) for k in ("title", "link")})
+        item = self.content.get_one(query=settings.DEFAULT_NEWS_QUERY)
+        news = {"title": item.title, "summary": item.summary, "link": item.link, "source": item.source}
+        logger.info("news=%s", {k: news.get(k) for k in ("title", "link", "source")})
 
         print("✍ 스크립트 생성 중…")
         long_script = generate_long_script(self.ai, news["title"], news["summary"])

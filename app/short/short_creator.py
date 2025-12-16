@@ -3,6 +3,7 @@ import numpy as np
 from io import BytesIO
 import logging
 from pathlib import Path
+import re
 
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import ImageClip, CompositeVideoClip
@@ -186,6 +187,27 @@ def make_bottom_subtitle_image(
 
     return np.array(img)
 
+def split_short_segments(text: str) -> list[str]:
+    """
+    숏츠 스크립트가 번호 목록 형태(1.~5.)로 오는 경우가 많아서
+    각 라인을 '한 문구' 세그먼트로 분리한다.
+    """
+    if not text:
+        return []
+    segs: list[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        # "1. " 제거
+        s = re.sub(r"^\d+\.\s*", "", s)
+        # 감싼 따옴표 제거
+        if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "“" and s[-1] == "”")):
+            s = s[1:-1].strip()
+        if s:
+            segs.append(s)
+    return segs
+
 
 def create_short_video(text: str, image_url: str | list[str], output: str | None = None):
     logger = logging.getLogger("auto_youtube.video.short")
@@ -229,19 +251,31 @@ def create_short_video(text: str, image_url: str | list[str], output: str | None
     from moviepy.editor import concatenate_videoclips
     slideshow = concatenate_videoclips(clips, method="compose").subclip(0, duration)
 
-    # TextClip 대신 PIL 자막 이미지 (ImageMagick 불필요)
-    subtitle_np = make_bottom_subtitle_image(
-        text=text,
-        canvas_size=settings.SHORT_VIDEO_RESOLUTION,
-        font_path=str(settings.FONT_PATH) if hasattr(settings, "FONT_PATH") else None,
-        font_size=settings.SHORT_FONT_SIZE,
-        max_lines=2,
-        box_height_ratio=0.28,
-    )
+    # 자막도 세그먼트로 분리해서 시간에 따라 교체 (롱폼과 동일한 UX)
+    segments = split_short_segments(text)
+    if not segments:
+        segments = [(text or "").strip()]
+    segments = [s for s in segments if s]
+    if not segments:
+        segments = [""]
 
-    txt_clip = ImageClip(subtitle_np).set_duration(duration)
+    seg_duration = duration / len(segments)
+    logger.info("subtitle_segments=%s seg_duration=%.2fs", len(segments), seg_duration)
 
-    final = CompositeVideoClip([slideshow, txt_clip])
+    subtitle_clips = []
+    for i, seg in enumerate(segments):
+        start = i * seg_duration
+        subtitle_np = make_bottom_subtitle_image(
+            text=seg,
+            canvas_size=settings.SHORT_VIDEO_RESOLUTION,
+            font_path=str(settings.FONT_PATH) if hasattr(settings, "FONT_PATH") else None,
+            font_size=settings.SHORT_FONT_SIZE,
+            max_lines=2,
+            box_height_ratio=0.28,
+        )
+        subtitle_clips.append(ImageClip(subtitle_np).set_start(start).set_duration(seg_duration))
+
+    final = CompositeVideoClip([slideshow, *subtitle_clips])
     final.write_videofile(
         output,
         fps=settings.VIDEO_FPS,
