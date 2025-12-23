@@ -30,6 +30,17 @@ HUMOR_QUERY = "funny"
 HUMOR_REDDIT_SUBREDDITS = ["funny", "tifu", "Jokes"]
 
 # ======================
+# Quote (Daily Wisdom) Pipeline Policy
+# ======================
+QUOTE_REDDIT_QUERY = "life advice"
+QUOTE_REDDIT_SUBREDDITS = ["LifeProTips", "DecidingToBeBetter", "GetMotivated"]
+
+# 타이핑 효과(초) - 토큰 1개가 추가되는 간격
+QUOTE_TOKEN_INTERVAL_SEC = 0.20
+# 마지막에 완성 문구를 고정 표시할 시간(초)
+QUOTE_HOLD_SEC = 1.5
+
+# ======================
 # Image Search Policy
 # ======================
 # 무료 이미지 provider 우선순위 (fallback)
