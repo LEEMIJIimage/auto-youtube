@@ -42,6 +42,11 @@ SHORT_IMAGE_COUNT = 3
 # 숏츠에서 이미지 전환 주기(초)
 SHORT_IMAGE_DURATION_SEC = 2
 
+# 숏츠 자막 박스/줄수 정책
+SHORT_SUBTITLE_MAX_LINES = 3
+SHORT_SUBTITLE_BOX_HEIGHT_RATIO = 0.32
+SHORT_SUBTITLE_SAFE_BOTTOM_RATIO = 0.08
+
 # ======================
 # Output Policy
 # ======================

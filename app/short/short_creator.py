@@ -138,7 +138,7 @@ def make_bottom_subtitle_image(
     font_path: str | None,
     font_size: int,
     box_height_ratio: float = 0.28,
-    max_lines: int = 2,
+    max_lines: int = 3,
     bg_alpha: int = 170,
 ) -> np.ndarray:
     """
@@ -148,34 +148,81 @@ def make_bottom_subtitle_image(
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    if font_path:
-        try:
-            font = ImageFont.truetype(font_path, font_size)
-        except Exception:
-            font = ImageFont.load_default()
-    else:
-        font = ImageFont.load_default()
-
     margin = int(w * 0.07)
     max_width = w - margin * 2
 
-    # 래핑(공백 없는 한글 포함)
-    lines = wrap_text_by_width(draw, text or "", font, max_width)
+    def load_font(size: int):
+        if font_path:
+            try:
+                return ImageFont.truetype(font_path, size)
+            except Exception:
+                return ImageFont.load_default()
+        return ImageFont.load_default()
 
-    if max_lines and len(lines) > max_lines:
-        kept = lines[:max_lines]
-        kept[-1] = kept[-1][: max(0, len(kept[-1]) - 1)] + "…"
-        lines = kept
+    # 유튜브 숏츠 플레이어 컨트롤/하단 UI에 가려지는 걸 피하려고
+    # 자막 박스를 바닥에 붙이지 않고 약간 위로 올린다.
+    safe_bottom_ratio = float(getattr(settings, "SHORT_SUBTITLE_SAFE_BOTTOM_RATIO", 0.06))
+    safe_bottom_margin = int(h * safe_bottom_ratio)
+    box_height_ratio = float(getattr(settings, "SHORT_SUBTITLE_BOX_HEIGHT_RATIO", box_height_ratio))
+    max_lines = int(getattr(settings, "SHORT_SUBTITLE_MAX_LINES", max_lines))
 
     box_h = int(h * box_height_ratio)
-    box_top = h - box_h
+    box_bottom = h - safe_bottom_margin
+    box_top = max(0, box_bottom - box_h)
+
+    pad_y = 18
+    pad_x = margin
+
+    # 텍스트가 박스 안에 "절대" 안 잘리도록 폰트 사이즈 자동 축소
+    # 우선 목표: 'ellipsis 없이' max_lines 안에 전체 문장을 넣기
+    font = load_font(font_size)
+    # 너무 일찍 폰트 축소를 멈추면 불필요하게 "…"이 생김.
+    # 숏츠는 화면이 크므로 충분히 줄일 수 있게 하한을 낮춘다.
+    min_font = 18
+    fitted_lines: list[str] = []
+
+    for _ in range(60):
+        # 래핑(공백 없는 한글 포함)
+        lines = wrap_text_by_width(draw, text or "", font, max_width)
+
+        ascent, descent = font.getmetrics()
+        line_h = ascent + descent + 12
+        # max_lines 제한 내에서 전체 문장이 다 들어가는지 확인
+        block_h = line_h * min(len(lines), max_lines if max_lines > 0 else len(lines))
+
+        # 가로도 체크(혹시 폰트 로딩 실패 등으로 폭 계산이 이상할 때 대비)
+        widest = 0.0
+        for line in lines:
+            widest = max(widest, draw.textlength(line, font=font))
+
+        # ellipsis 없이 max_lines 내로 들어가는 경우
+        if (len(lines) <= max_lines) and (block_h <= (box_h - pad_y * 2)) and (widest <= (max_width)):
+            fitted_lines = lines
+            break
+
+        # 더 줄일 수 없으면 중단
+        if font_size <= min_font:
+            fitted_lines = lines
+            break
+        font_size -= 2
+        font = load_font(font_size)
+
+    # 아직도 라인이 많다면(=max_lines를 넘는다면) 이때만 ellipsis 처리
+    lines = fitted_lines if fitted_lines else wrap_text_by_width(draw, text or "", font, max_width)
+    if max_lines and len(lines) > max_lines:
+        kept = lines[:max_lines]
+        # 마지막 줄을 말줄임으로 마무리(단어 중간도 허용)
+        last = kept[-1].rstrip()
+        kept[-1] = (last[:-1] if len(last) > 1 else last) + "…"
+        lines = kept
+
     bg = Image.new("RGBA", (w, box_h), (0, 0, 0, bg_alpha))
     img.paste(bg, (0, box_top))
 
     ascent, descent = font.getmetrics()
     line_h = ascent + descent + 12
     block_h = line_h * len(lines)
-    y = box_top + max(0, (box_h - block_h) // 2)
+    y = box_top + max(pad_y, (box_h - block_h) // 2)
 
     for line in lines:
         tw = draw.textlength(line, font=font)
@@ -207,6 +254,50 @@ def split_short_segments(text: str) -> list[str]:
         if s:
             segs.append(s)
     return segs
+
+
+def split_long_segment(seg: str, max_len: int = 45) -> list[str]:
+    """
+    한 세그먼트가 너무 길어서 박스/줄수 제한으로 '…'이 생기는 것을 방지하기 위해
+    문장을 더 짧은 조각으로 분해한다.
+    - 우선 구두점/쉼표 기준으로 나눈 뒤
+    - 그래도 길면 max_len 기준으로 합치고
+    - 최후에는 하드 컷
+    """
+    seg = (seg or "").strip()
+    if not seg:
+        return []
+    if len(seg) <= max_len:
+        return [seg]
+
+    parts = [p.strip() for p in re.split(r"([,，]|[.!?]|…)+", seg) if p and p.strip()]
+    if not parts:
+        parts = [seg]
+
+    out: list[str] = []
+    cur = ""
+    for p in parts:
+        if not cur:
+            cur = p
+            continue
+        # 다음 조각을 붙였을 때 너무 길면 flush
+        if len(cur) + 1 + len(p) <= max_len:
+            cur = f"{cur} {p}"
+        else:
+            out.append(cur)
+            cur = p
+    if cur:
+        out.append(cur)
+
+    # 여전히 긴 조각은 하드 컷
+    final: list[str] = []
+    for s in out:
+        if len(s) <= max_len:
+            final.append(s)
+        else:
+            for i in range(0, len(s), max_len):
+                final.append(s[i : i + max_len].strip())
+    return [x for x in final if x]
 
 
 def create_short_video(text: str, image_url: str | list[str], output: str | None = None):
@@ -259,6 +350,12 @@ def create_short_video(text: str, image_url: str | list[str], output: str | None
     if not segments:
         segments = [""]
 
+    # 너무 긴 세그먼트는 추가로 분해해서 "…" 발생을 최소화
+    expanded: list[str] = []
+    for s in segments:
+        expanded.extend(split_long_segment(s, max_len=45))
+    segments = expanded or segments
+
     seg_duration = duration / len(segments)
     logger.info("subtitle_segments=%s seg_duration=%.2fs", len(segments), seg_duration)
 
@@ -270,8 +367,8 @@ def create_short_video(text: str, image_url: str | list[str], output: str | None
             canvas_size=settings.SHORT_VIDEO_RESOLUTION,
             font_path=str(settings.FONT_PATH) if hasattr(settings, "FONT_PATH") else None,
             font_size=settings.SHORT_FONT_SIZE,
-            max_lines=2,
-            box_height_ratio=0.28,
+            max_lines=int(getattr(settings, "SHORT_SUBTITLE_MAX_LINES", 3)),
+            box_height_ratio=float(getattr(settings, "SHORT_SUBTITLE_BOX_HEIGHT_RATIO", 0.32)),
         )
         subtitle_clips.append(ImageClip(subtitle_np).set_start(start).set_duration(seg_duration))
 
